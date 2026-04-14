@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>dontgetcaught</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Georgia',serif;background:#0c0c0c;color:#e0dbd0;min-height:100vh;display:flex;flex-direction:column;align-items:center}
+    .container{width:100%;max-width:720px;padding:2rem 1rem;display:flex;flex-direction:column;min-height:100vh}
+    .hdr{padding-bottom:1.2rem;margin-bottom:1.2rem;border-bottom:1px solid #1e1e1e;text-align:center}
+    h1{font-weight:400;font-size:1.4rem;color:#f0ebe0;letter-spacing:.03em}
+    .sub{font-size:.72rem;color:#444;font-family:monospace;margin-top:.3rem}
+    .chat{flex:1;display:flex;flex-direction:column;gap:1rem;padding-bottom:1rem}
+    .msg{display:flex;flex-direction:column;gap:.3rem;max-width:85%}
+    .msg.ai{align-self:flex-start}
+    .msg.user{align-self:flex-end;align-items:flex-end}
+    .msg.warning{align-self:flex-start;max-width:85%}
+    .bubble{padding:.75rem 1rem;border-radius:12px;font-size:.9rem;line-height:1.6}
+    .ai .bubble{background:#1a1a1a;border:1px solid #2a2a2a;color:#e0dbd0;border-radius:4px 12px 12px 12px}
+    .user .bubble{background:#1e3a2f;border:1px solid #2ecc71;color:#c8f0dc;border-radius:12px 4px 12px 12px;font-family:monospace;font-size:.82rem}
+    .warning .bubble{background:#1a1200;border:1px solid #f0a500;color:#e0dbd0;border-radius:4px 12px 12px 12px}
+    .back-btn{font-size:.65rem;font-family:monospace;color:#444;background:transparent;border:1px solid #2a2a2a;border-radius:4px;padding:.15rem .4rem;cursor:pointer;align-self:flex-end;margin-bottom:.1rem;transition:.15s}
+    .back-btn:hover{color:#e0a09a;border-color:#c0392b}
+    .chips{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.5rem}
+    .chip{padding:.45rem .9rem;border:1px solid #333;border-radius:20px;font-size:.78rem;font-family:monospace;cursor:pointer;color:#888;background:transparent;transition:.15s;white-space:nowrap}
+    .chip:hover{border-color:#2ecc71;color:#2ecc71}
+    .chip.selected{border-color:#2ecc71;color:#2ecc71;background:rgba(46,204,113,.08)}
+    .chip.disabled{opacity:.35;cursor:default;pointer-events:none}
+    .chip.warn-yes{border-color:#f0a500;color:#f0a500}
+    .chip.warn-yes:hover{background:rgba(240,165,0,.1)}
+    .chip.warn-no{border-color:#c0392b;color:#e74c3c}
+    .chip.warn-no:hover{background:rgba(192,57,43,.1)}
+    .freetext-wrap{margin-top:.5rem;display:flex;gap:.5rem}
+    .freetext-input{flex:1;background:#111;border:1px solid #2a2a2a;color:#e0dbd0;padding:.5rem .8rem;border-radius:8px;font-size:.85rem;font-family:monospace;outline:none}
+    .freetext-input:focus{border-color:#444}
+    .freetext-send{padding:.5rem .9rem;background:#1e3a2f;border:1px solid #2ecc71;color:#2ecc71;border-radius:8px;cursor:pointer;font-family:monospace;font-size:.78rem}
+    .freetext-send:hover{background:rgba(46,204,113,.15)}
+    .progress-box{background:#0a0a0a;border:1px solid #1a1a1a;border-radius:8px;padding:.8rem 1rem;font-family:monospace;font-size:.75rem;line-height:1.8;max-height:200px;overflow-y:auto}
+    .pl{margin-bottom:1px}
+    .result-box{background:#0f0f0f;border:1px solid #2a2a2a;border-radius:8px;padding:1.2rem 1.4rem;font-size:.92rem;line-height:1.85;white-space:pre-wrap;font-family:'Georgia',serif;color:#d8d4cc}
+    .result-actions{display:flex;gap:.6rem;margin-top:.8rem}
+    .raction{padding:.55rem 1.2rem;border-radius:6px;font-family:monospace;font-size:.78rem;cursor:pointer;letter-spacing:.04em;transition:.15s}
+    .raction.rewrite{background:transparent;border:1px solid #555;color:#888}
+    .raction.rewrite:hover{border-color:#e0dbd0;color:#e0dbd0}
+    .raction.copy{background:transparent;border:1px solid #2ecc71;color:#2ecc71}
+    .raction.copy:hover{background:rgba(46,204,113,.1)}
+    .raction.copy.done{background:rgba(46,204,113,.15)}
+    .raction.save{background:transparent;border:1px solid #333;color:#444;cursor:not-allowed}
+    .score-badge{display:inline-block;padding:.2rem .6rem;border-radius:10px;font-family:monospace;font-size:.72rem;margin-left:.5rem}
+    .score-green{background:rgba(46,204,113,.12);border:1px solid rgba(46,204,113,.3);color:#2ecc71}
+    .score-yellow{background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);color:#f0a500}
+    .score-red{background:rgba(192,57,43,.1);border:1px solid rgba(192,57,43,.3);color:#e74c3c}
+    .refund-msg{background:#0a1a0a;border:1px solid #2ecc71;color:#2ecc71;padding:.6rem 1rem;border-radius:8px;font-family:monospace;font-size:.75rem;margin-top:.5rem}
+    .input-area{position:sticky;bottom:0;background:#0c0c0c;padding:1rem 0 .5rem;border-top:1px solid #1a1a1a;margin-top:auto}
+    .input-row{display:flex;gap:.5rem;align-items:flex-end}
+    .input-wrap{flex:1}
+    textarea.main-input{width:100%;background:#111;border:1px solid #2a2a2a;color:#e0dbd0;padding:.75rem 1rem;border-radius:8px;font-size:.9rem;line-height:1.5;font-family:'Georgia',serif;resize:none;min-height:52px;max-height:160px;overflow-y:auto;transition:border-color .2s}
+    textarea.main-input:focus{border-color:#444;outline:none}
+    textarea.main-input:disabled{opacity:.35;cursor:not-allowed}
+    .send-btn{padding:.75rem 1.2rem;background:#1e3a2f;border:1px solid #2ecc71;color:#2ecc71;border-radius:8px;cursor:pointer;font-family:monospace;font-size:.82rem;white-space:nowrap;transition:.15s;flex-shrink:0}
+    .send-btn:hover{background:rgba(46,204,113,.15)}
+    .send-btn:disabled{opacity:.4;cursor:not-allowed}
+    .file-btn{padding:.3rem .7rem;border:1px solid #2a2a2a;border-radius:4px;font-family:monospace;font-size:.7rem;color:#555;cursor:pointer;background:transparent}
+    .file-btn:hover{border-color:#555;color:#888}
+    .file-name{font-size:.7rem;font-family:monospace;color:#2ecc71;margin-left:.4rem}
+    .hidden{display:none}
+    .typing{display:flex;gap:4px;padding:.5rem 0;align-items:center}
+    .dot{width:6px;height:6px;background:#444;border-radius:50%;animation:bounce .8s infinite}
+    .dot:nth-child(2){animation-delay:.15s}.dot:nth-child(3){animation-delay:.3s}
+    @keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+    .versions-panel{margin-top:.8rem;border-top:1px solid #1a1a1a;padding-top:.8rem}
+    .versions-label{font-size:.68rem;font-family:monospace;color:#444;margin-bottom:.5rem}
+    .version-tabs{display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:.6rem}
+    .vtab{padding:.25rem .6rem;border:1px solid #2a2a2a;border-radius:4px;font-family:monospace;font-size:.68rem;cursor:pointer;color:#555;background:transparent;transition:.15s}
+    .vtab:hover{border-color:#555;color:#888}
+    .vtab.active{border-color:#7eb8f7;color:#7eb8f7;background:rgba(126,184,247,.06)}
+    .version-text{background:#0a0a0a;border:1px solid #1a1a1a;border-radius:6px;padding:.8rem 1rem;font-size:.82rem;line-height:1.75;white-space:pre-wrap;font-family:'Georgia',serif;color:#b8b4ac;max-height:300px;overflow-y:auto}
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="hdr">
+    <h1>dontgetcaught</h1>
+    <p class="sub">foreign sources → translated → gptzero verified → 85%+ human</p>
+  </div>
+  <div class="chat" id="chat"></div>
+  <div class="input-area">
+    <div class="input-row">
+      <div class="input-wrap">
+        <textarea class="main-input" id="mainInput" placeholder="What do you want to write? Be as specific or brief as you like..." rows="2"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSend()}"
+          oninput="autoResize(this)"></textarea>
+      </div>
+      <button class="send-btn" id="sendBtn" onclick="handleSend()">SEND</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:.5rem;margin-top:.4rem">
+      <button class="file-btn" id="fileBtn" onclick="document.getElementById('fileInput').click()">📎 Upload doc</button>
+      <span class="file-name hidden" id="fileName"></span>
+      <input type="file" id="fileInput" accept=".txt,.docx" class="hidden" onchange="handleFile(event)"/>
+    </div>
+  </div>
+</div>
+
+<script>
+const SERVER="http://localhost:3131";
+const TARGET=85;
+let uploadedText="",uploadedFileName="";
+let workingText="";
+let warningGiven=false;
+let inputLocked=false;
+let versions=[]; // {label, score, text}
+
+// State machine
+let state={
+  prompt:"",
+  clarifications:[],  // [{question, answer}]
+  textType:null,
+  tone:null,
+  citations:null,
+  wordCount:null,
+  generating:false
+};
+
+// History stack for back button
+// Each entry: { userMsgEl, aiMsgEl, stateSnapshot }
+let history=[];
+
+const TEXT_TYPES={"Article":"article","Blog Post":"blog","Opinion Editorial":"oped","Essay":"essay","Review":"review","Report":"report","Speech":"speech"};
+const TONES=["Persuasive","Neutral","Optimistic","Critical","Urgent","Reflective","Humorous","Empathetic"];
+const lc={step:"#7eb8f7",info:"#888",warn:"#f0a500",success:"#2ecc71",error:"#e74c3c"};
+
+function autoResize(ta){ta.style.height="auto";ta.style.height=Math.min(ta.scrollHeight,160)+"px";}
+function scrollBottom(){window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"});}
+
+function lockInput(){
+  inputLocked=true;
+  document.getElementById("mainInput").disabled=true;
+  document.getElementById("sendBtn").disabled=true;
+  document.getElementById("fileBtn").disabled=true;
+}
+
+function unlockInput(){
+  inputLocked=false;
+  document.getElementById("mainInput").disabled=false;
+  document.getElementById("sendBtn").disabled=false;
+  document.getElementById("fileBtn").disabled=false;
+}
+
+function addAiMsg(content, isHtml=false, extraClass=""){
+  const chat=document.getElementById("chat");
+  const wrap=document.createElement("div");
+  wrap.className="msg "+(extraClass||"ai");
+  const bubble=document.createElement("div");
+  bubble.className="bubble";
+  if(isHtml)bubble.innerHTML=content;
+  else bubble.textContent=content;
+  wrap.appendChild(bubble);
+  chat.appendChild(wrap);
+  scrollBottom();
+  return wrap;
+}
+
+function addUserMsg(text, onBack){
+  const chat=document.getElementById("chat");
+  const wrap=document.createElement("div");
+  wrap.className="msg user";
+
+  // Back button
+  const backBtn=document.createElement("button");
+  backBtn.className="back-btn";
+  backBtn.textContent="↩ undo";
+  backBtn.onclick=()=>onBack();
+  wrap.appendChild(backBtn);
+
+  const bubble=document.createElement("div");
+  bubble.className="bubble";
+  bubble.textContent=text;
+  wrap.appendChild(bubble);
+  chat.appendChild(wrap);
+  scrollBottom();
+  return wrap;
+}
+
+function addTyping(){
+  const chat=document.getElementById("chat");
+  const wrap=document.createElement("div");
+  wrap.className="msg ai";wrap.id="typing-ind";
+  wrap.innerHTML='<div class="bubble"><div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>';
+  chat.appendChild(wrap);scrollBottom();
+}
+
+function removeTyping(){document.getElementById("typing-ind")?.remove();}
+
+function addChips(question, options, onSelect, chipClass=""){
+  const wrap=addAiMsg("", true);
+  const bubble=wrap.querySelector(".bubble");
+  bubble.innerHTML='<div style="margin-bottom:.5rem;color:#c8c4bc">'+question+'</div>';
+  const chips=document.createElement("div");
+  chips.className="chips";
+  options.forEach(opt=>{
+    const chip=document.createElement("div");
+    chip.className="chip"+(chipClass?" "+chipClass:"");
+    chip.textContent=opt;
+    chip.onclick=()=>{
+      chips.querySelectorAll(".chip").forEach(c=>c.classList.add("disabled"));
+      chip.classList.add("selected");
+      const userEl=addUserMsg(opt, ()=>goBack(aiEl, userEl));
+      const aiEl=wrap;
+      history.push({aiEl:wrap, userEl});
+      onSelect(opt);
+    };
+    chips.appendChild(chip);
+  });
+  bubble.appendChild(chips);
+  return wrap;
+}
+
+function addFreetextQ(question, placeholder, onSubmit){
+  const wrap=addAiMsg("", true);
+  const bubble=wrap.querySelector(".bubble");
+  bubble.innerHTML='<div style="margin-bottom:.5rem;color:#c8c4bc">'+question+'</div>';
+  const row=document.createElement("div");row.className="freetext-wrap";
+  const inp=document.createElement("input");inp.type="text";inp.className="freetext-input";inp.placeholder=placeholder||"Type your answer...";
+  const btn=document.createElement("button");btn.className="freetext-send";btn.textContent="OK";
+  const submit=()=>{
+    const val=inp.value.trim();if(!val)return;
+    inp.disabled=true;btn.disabled=true;
+    const userEl=addUserMsg(val, ()=>goBack(wrap, userEl));
+    history.push({aiEl:wrap, userEl});
+    onSubmit(val);
+  };
+  btn.onclick=submit;
+  inp.onkeydown=(e)=>{if(e.key==="Enter"){e.preventDefault();submit();}};
+  row.appendChild(inp);row.appendChild(btn);
+  bubble.appendChild(row);
+  // Focus the input
+  setTimeout(()=>inp.focus(),100);
+  return wrap;
+}
+
+function goBack(aiEl, userEl){
+  // Remove both elements from DOM
+  aiEl?.remove();
+  userEl?.remove();
+  // Remove from history
+  history=history.filter(h=>h.aiEl!==aiEl&&h.userEl!==userEl);
+  // Re-enable chips on the previous ai question if it exists
+  const lastHistory=history[history.length-1];
+  if(lastHistory){
+    lastHistory.aiEl.querySelectorAll(".chip").forEach(c=>{c.classList.remove("disabled","selected");});
+  }
+  // Roll back state to before this answer
+  rollbackState(aiEl);
+}
+
+function rollbackState(aiEl){
+  // Figure out which question was in aiEl and clear that state
+  const text=aiEl?.querySelector(".bubble")?.textContent||"";
+  if(text.includes("type of text"))state.textType=null;
+  else if(text.includes("tone"))state.tone=null;
+  else if(text.includes("citations"))state.citations=null;
+  else if(text.includes("many words"))state.wordCount=null;
+  else if(text.includes("clarif")||true){
+    // For clarification questions, pop the last clarification
+    state.clarifications=state.clarifications.slice(0,-1);
+  }
+}
+
+function inferFromPrompt(prompt){
+  const p=prompt.toLowerCase();
+  let textType=null,tone=null,citations=null,wordCount=null;
+  if(/\b(article|news|explainer)\b/.test(p))textType="article";
+  else if(/\b(blog|blog post)\b/.test(p))textType="blog";
+  else if(/\b(op-ed|oped|opinion|editorial|persuasive|argue)\b/.test(p))textType="oped";
+  else if(/\b(essay)\b/.test(p))textType="essay";
+  else if(/\b(review|evaluate|assess)\b/.test(p))textType="review";
+  else if(/\b(report|findings|analysis)\b/.test(p))textType="report";
+  else if(/\b(speech|address|talk|audience)\b/.test(p))textType="speech";
+  if(/\b(persuasive|convince|argue)\b/.test(p))tone="Persuasive";
+  else if(/\b(neutral|objective|balanced)\b/.test(p))tone="Neutral";
+  else if(/\b(optimistic|positive|hopeful)\b/.test(p))tone="Optimistic";
+  else if(/\b(critical|critique)\b/.test(p))tone="Critical";
+  else if(/\b(urgent|emergency|crisis)\b/.test(p))tone="Urgent";
+  else if(/\b(reflective|personal|memoir)\b/.test(p))tone="Reflective";
+  else if(/\b(humorous|funny|humor|witty)\b/.test(p))tone="Humorous";
+  else if(/\b(empathetic|compassionate|emotional)\b/.test(p))tone="Empathetic";
+  if(/\b(no citations?|without citations?|don't cite)\b/.test(p))citations=false;
+  else if(/\b(with citations?|cite|references?)\b/.test(p))citations=true;
+  const wordMatch=p.match(/\b(\d+)\s*words?\b/);
+  if(wordMatch)wordCount=parseInt(wordMatch[1]);
+  return{textType,tone,citations,wordCount};
+}
+
+async function handleSend(){
+  if(inputLocked)return;
+  const input=document.getElementById("mainInput");
+  const raw=input.value.trim();
+  if(!raw&&!uploadedText)return;
+  const prompt=uploadedText?"Document content:\n"+uploadedText+"\n\n"+(raw?"Additional instructions: "+raw:""):raw;
+  input.value="";input.style.height="auto";
+  document.getElementById("fileInput").value="";
+  document.getElementById("fileName").classList.add("hidden");
+  uploadedText="";
+
+  // Show user message (no back button for initial prompt)
+  const chat=document.getElementById("chat");
+  const wrap=document.createElement("div");wrap.className="msg user";
+  const bubble=document.createElement("div");bubble.className="bubble";bubble.textContent=raw||"📎 "+uploadedFileName;
+  wrap.appendChild(bubble);chat.appendChild(wrap);scrollBottom();
+
+  // Lock input immediately
+  lockInput();
+
+  state.prompt=prompt;
+  warningGiven=false;
+  state.clarifications=[];
+  history=[];
+
+  const inferred=inferFromPrompt(prompt);
+  state.textType=inferred.textType;
+  state.tone=inferred.tone;
+  state.citations=inferred.citations;
+  state.wordCount=inferred.wordCount;
+
+  // First: check for clarifications needed
+  await checkClarifications();
+}
+
+async function checkClarifications(){
+  addTyping();
+  try{
+    const res=await fetch(SERVER+"/clarify",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({prompt:state.prompt,clarificationsSoFar:state.clarifications})
+    });
+    const data=await res.json();
+    removeTyping();
+    if(data.needsClarification && data.question){
+      const prefixedQ="Quick clarifying question: "+data.question;
+      addFreetextQ(prefixedQ,"Type your answer...", (answer)=>{
+        state.clarifications.push({question:data.question,answer});
+        // Enrich the prompt with the answer so it doesnt ask again
+        state.prompt=state.prompt+" (specifically: "+answer+")";
+        checkClarifications();
+      });
+    } else {
+      await askMissing();
+    }
+  }catch(e){
+    removeTyping();
+    await askMissing();
+  }
+}
+
+async function askMissing(){
+  if(!state.textType){
+    setTimeout(()=>{
+      addChips("What type of text do you want?",Object.keys(TEXT_TYPES),(opt)=>{
+        state.textType=TEXT_TYPES[opt];askMissing();
+      });
+    },400);
+    return;
+  }
+  if(!state.tone){
+    setTimeout(()=>{
+      addChips("What tone should the text have?",TONES,(opt)=>{
+        state.tone=opt;askMissing();
+      });
+    },400);
+    return;
+  }
+  if(state.citations===null){
+    setTimeout(()=>{
+      addChips("Do you want in-text citations?",["Yes","No"],(opt)=>{
+        state.citations=(opt==="Yes");askMissing();
+      });
+    },400);
+    return;
+  }
+  if(state.wordCount===null){
+    setTimeout(()=>{
+      addFreetextQ("Around how many words should your text be?","e.g. 500",(val)=>{
+        const n=parseInt(val.replace(/[^0-9]/g,""));
+        state.wordCount=n>0?n:500;
+        askMissing();
+      });
+    },400);
+    return;
+  }
+  await analyzeAndProceed();
+}
+
+async function analyzeAndProceed(){
+  addTyping();
+  try{
+    const res=await fetch(SERVER+"/analyze",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({prompt:state.prompt,textType:state.textType})
+    });
+    const analysis=await res.json();
+    removeTyping();
+    if(analysis.category==="research_based"){
+      await generate();
+    } else {
+      warningGiven=true;
+      const pct=analysis.estimatedHumanPct;
+      const msg="Unfortunately, given the way dontgetcaught works, this type of prompt will likely generate a result that shows as "+(100-pct)+"% AI-generated. Our algorithm works best with research-based topics such as journalism, academic subjects, current events, science, history, culture, and more! Do you still wish to proceed?";
+      const wWrap=document.createElement("div");wWrap.className="msg warning";
+      const wBubble=document.createElement("div");wBubble.className="bubble";
+      wBubble.innerHTML='<div style="color:#f0a500;font-size:.8rem;font-family:monospace;margin-bottom:.4rem">⚠ Heads up</div><div style="margin-bottom:.8rem">'+msg+'</div>';
+      const chips=document.createElement("div");chips.className="chips";
+      ["Yes, proceed","No, cancel"].forEach(opt=>{
+        const chip=document.createElement("div");
+        chip.className="chip "+(opt.startsWith("Yes")?"warn-yes":"warn-no");
+        chip.textContent=opt;
+        chip.onclick=()=>{
+          chips.querySelectorAll(".chip").forEach(c=>c.classList.add("disabled"));
+          chip.classList.add("selected");
+          const uEl=addUserMsg(opt,()=>{
+            uEl.remove();wWrap.remove();
+            warningGiven=false;
+            // Re-show warning
+            analyzeAndProceed();
+          });
+          if(opt.startsWith("Yes")){generate();}
+          else{addAiMsg("No problem — feel free to try a different prompt.");unlockInput();}
+        };
+        chips.appendChild(chip);
+      });
+      wBubble.appendChild(chips);wWrap.appendChild(wBubble);
+      document.getElementById("chat").appendChild(wWrap);scrollBottom();
+    }
+  }catch(e){
+    removeTyping();
+    await generate();
+  }
+}
+
+async function generate(){
+  state.generating=true;
+
+  const typeNames={article:"Article",blog:"Blog Post",oped:"Op-Ed",essay:"Essay",review:"Review",report:"Report",speech:"Speech"};
+  let fullPrompt=state.prompt;
+  if(state.clarifications.length>0){
+    fullPrompt+="\n\nClarifications from user:\n"+state.clarifications.map(c=>c.question+" → "+c.answer).join("\n");
+  }
+  fullPrompt+="\n\nText type: "+typeNames[state.textType]+"\nTone: "+state.tone+"\nWord count: "+state.wordCount+" words";
+
+  const chat=document.getElementById("chat");
+  const progressWrap=document.createElement("div");progressWrap.className="msg ai";
+  const progressBubble=document.createElement("div");progressBubble.className="bubble";
+  progressBubble.innerHTML='<div style="margin-bottom:.5rem;color:#7eb8f7;font-family:monospace;font-size:.78rem">Generating your piece...</div><div class="progress-box" id="progressLog"></div>';
+  progressWrap.appendChild(progressBubble);chat.appendChild(progressWrap);scrollBottom();
+
+  function plog(msg,type="info"){
+    const box=document.getElementById("progressLog");if(!box)return;
+    const d=document.createElement("div");d.className="pl";d.style.color=lc[type]||"#888";d.textContent=msg;
+    box.appendChild(d);box.scrollTop=box.scrollHeight;scrollBottom();
+  }
+
+  async function apiFetch(endpoint,body){
+    const res=await fetch(SERVER+endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const data=await res.json();
+    if(!res.ok)throw new Error(data.error||endpoint+" failed");
+    return data;
+  }
+
+  workingText="";let finalScore=0;versions=[];
+
+  try{
+    const health=await fetch(SERVER+"/health").catch(()=>null);
+    if(!health||!health.ok)throw new Error("Cannot reach server — run `cd ~/Desktop/humanizer && node server.js` in terminal");
+
+    plog("Phase 1 — searching foreign language sources...","step");
+    const{draft}=await apiFetch("/generate",{prompt:fullPrompt,citations:state.citations,textType:state.textType});
+    workingText=draft;plog("Draft assembled.","success");
+
+    for(let round=1;round<=3;round++){
+      plog("── Round "+round+" GPTZero scan...","step");
+      const scan=await apiFetch("/scan",{text:workingText});
+      const humanPct=Math.round((1-scan.overallAiProb)*100);
+      finalScore=humanPct;
+      const flagged=scan.sentences.filter(s=>s.aiProb*100>=60);
+      plog("Score: "+humanPct+"% human — "+flagged.length+" flagged",humanPct>=TARGET?"success":"warn");
+      if(humanPct>=TARGET){plog("✓ Reached "+humanPct+"% — moving to polish.","success");break;}
+      if(!flagged.length){plog("No sentences above threshold.","warn");break;}
+      if(round===3){plog("Max rounds. Moving to polish.","warn");break;}
+      plog("Humanizing connective tissue...","step");
+      const{humanized}=await apiFetch("/humanize",{draft:workingText,flaggedSentences:flagged.map(s=>s.text),textType:state.textType,citations:state.citations});
+      plog("Rewritten. Re-scanning...","info");workingText=humanized;
+      versions.push({label:"Round "+round+" rewrite",score:null,text:humanized});
+    }
+
+    plog("Phase 3 — polishing...","step");
+    // Save pre-polish version
+    const prePolishText=workingText;
+    const{polished}=await apiFetch("/polish",{text:workingText,textType:state.textType,citations:state.citations});
+    workingText=polished;plog("Polish complete.","success");
+
+    // Show pre-polish scan for comparison
+    plog("Scanning pre-polish version for comparison...","info");
+    const preScan=await apiFetch("/scan",{text:prePolishText});
+    const prePct=Math.round((1-preScan.overallAiProb)*100);
+    plog("Pre-polish score was: "+prePct+"% human","info");
+
+    plog("Phase 4 — final scan...","step");
+    const finalScan=await apiFetch("/scan",{text:workingText});
+    finalScore=Math.round((1-finalScan.overallAiProb)*100);
+    plog("✓ Final score: "+finalScore+"% human. Done!","success");
+    versions.push({label:"Final (after polish)",score:finalScore,text:workingText});
+
+    const scoreClass=finalScore>=90?"score-green":finalScore>=80?"score-yellow":"score-red";
+    const resultWrap=document.createElement("div");resultWrap.className="msg ai";resultWrap.style.maxWidth="100%";resultWrap.style.width="100%";
+    const resultBubble=document.createElement("div");resultBubble.className="bubble";resultBubble.style.maxWidth="100%";
+    const formatted=workingText.split(/\n\n+/).map(p=>'<p style="margin-bottom:1rem">'+p.replace(/\n/g,'<br>')+'</p>').join('');
+    // Build versions panel
+    let vTabsHtml=versions.map((v,i)=>'<div class="vtab'+(i===versions.length-1?' active':'')+'" onclick="showVersion('+i+',this)">'+v.label+'</div>').join('');
+    let vPanelHtml='<div class="versions-panel"><div class="versions-label">ALL VERSIONS — click to compare</div><div class="version-tabs">'+vTabsHtml+'</div><div class="version-text" id="versionText">'+versions[versions.length-1].text+'</div></div>';
+
+    resultBubble.innerHTML=
+      '<div style="font-size:.72rem;font-family:monospace;color:#555;margin-bottom:.8rem">Here is your finished piece <span class="score-badge '+scoreClass+'">'+finalScore+'% human</span></div>'+
+      '<div class="result-box">'+formatted+'</div>'+
+      '<div class="result-actions">'+
+        '<button class="raction rewrite" onclick="doRewrite()">↺ Rewrite</button>'+
+        '<button class="raction copy" onclick="doCopyResult(this)">⎘ Copy</button>'+
+        '<button class="raction save">⬇ Save</button>'+
+      '</div>'+vPanelHtml;
+    resultWrap.appendChild(resultBubble);chat.appendChild(resultWrap);
+
+    if(!warningGiven&&finalScore<TARGET){
+      const refWrap=document.createElement("div");refWrap.className="msg ai";refWrap.style.maxWidth="100%";
+      const refBubble=document.createElement("div");refBubble.className="bubble";
+      refBubble.innerHTML='<div class="refund-msg">✓ Your credits have been refunded. This prompt produced a result below our 85% human threshold. We only charge for results that meet our standard.</div>';
+      refWrap.appendChild(refBubble);chat.appendChild(refWrap);
+    }
+    scrollBottom();
+
+  }catch(e){
+    plog("Error: "+e.message,"error");
+    addAiMsg("Something went wrong: "+e.message+". Please try again.");
+  }finally{
+    state.generating=false;
+    // Reset for next
+    state.textType=null;state.tone=null;state.citations=null;state.wordCount=null;state.clarifications=[];
+    history=[];
+    unlockInput();
+  }
+}
+
+function showVersion(idx, tabEl){
+  const v=versions[idx];
+  if(!v)return;
+  document.getElementById("versionText").textContent=v.text;
+  document.querySelectorAll(".vtab").forEach(t=>t.classList.remove("active"));
+  tabEl.classList.add("active");
+}
+
+function doCopyResult(btn){
+  if(!workingText)return;
+  navigator.clipboard.writeText(workingText).then(()=>{
+    btn.textContent="✓ Copied";btn.classList.add("done");
+    setTimeout(()=>{btn.textContent="⎘ Copy";btn.classList.remove("done");},2000);
+  }).catch(()=>{
+    const ta=document.createElement("textarea");ta.value=workingText;
+    document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
+    btn.textContent="✓ Copied";btn.classList.add("done");
+    setTimeout(()=>{btn.textContent="⎘ Copy";btn.classList.remove("done");},2000);
+  });
+}
+
+function doRewrite(){
+  state.textType=null;state.tone=null;state.citations=null;state.wordCount=null;
+  state.prompt="";state.clarifications=[];warningGiven=false;history=[];
+  unlockInput();
+  addAiMsg("Sure — what would you like to write? Give me a new prompt or tweak the details.");
+}
+
+async function handleFile(event){
+  const file=event.target.files[0];if(!file)return;
+  uploadedFileName=file.name;
+  const formData=new FormData();formData.append("file",file);
+  try{
+    const res=await fetch(SERVER+"/extract",{method:"POST",body:formData});
+    const data=await res.json();
+    if(!res.ok)throw new Error(data.error);
+    uploadedText=data.text;
+    const fn=document.getElementById("fileName");fn.textContent="📎 "+file.name;fn.classList.remove("hidden");
+  }catch(e){
+    addAiMsg("Could not read that file: "+e.message+". Try a .txt file instead.");
+  }
+}
+
+setTimeout(()=>{
+  addAiMsg("Hey — what do you want to write? Give me a prompt or upload a document, and I'll handle the rest.");
+},300);
+</script>
+</body>
+</html>
