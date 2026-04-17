@@ -52,6 +52,7 @@
     .score-yellow{background:rgba(240,165,0,.1);border:1px solid rgba(240,165,0,.3);color:#f0a500}
     .score-red{background:rgba(192,57,43,.1);border:1px solid rgba(192,57,43,.3);color:#e74c3c}
     .refund-msg{background:#0a1a0a;border:1px solid #2ecc71;color:#2ecc71;padding:.6rem 1rem;border-radius:8px;font-family:monospace;font-size:.75rem;margin-top:.5rem}
+    .lucky-msg{background:rgba(126,184,247,.1);border:1px solid rgba(126,184,247,.45);color:#9dc8f0;padding:.6rem 1rem;border-radius:8px;font-family:monospace;font-size:.75rem;margin-bottom:.85rem;line-height:1.5}
     .input-area{position:sticky;bottom:0;background:#0c0c0c;padding:1rem 0 .5rem;border-top:1px solid #1a1a1a;margin-top:auto}
     .input-row{display:flex;gap:.5rem;align-items:flex-end}
     .input-wrap{flex:1}
@@ -132,7 +133,9 @@ let state={
   citations:null,
   wordCount:null,
   mode:'A',
-  generating:false
+  generating:false,
+  writingMode:"research",
+  analyzedCategory:null
 };
 
 // History stack for back button
@@ -336,11 +339,19 @@ async function handleSend(){
   lockInput();
 
   // Branch on mode
-  if(state.mode==='D'){await runTransplant(text);return;}
+  if(state.mode==='D'){
+    state.prompt=text;
+    state.writingMode="research";
+    state.analyzedCategory=null;
+    await runTransplant(text);
+    return;
+  }
 
   // Mode A: existing flow
   state.prompt=text;
   warningGiven=false;
+  state.writingMode="research";
+  state.analyzedCategory=null;
   state.clarifications=[];
   history=[];
 
@@ -428,12 +439,19 @@ async function analyzeAndProceed(){
     });
     const analysis=await res.json();
     removeTyping();
+    if(analysis.nonTextDeliverable){
+      addAiMsg("dontgetcaught only produces written text — it can't create drawings, paintings, filmed performances, or other non-text art. If you need the written part of an assignment (for example a reflection, essay, or analysis), ask for that text specifically and we can help.");
+      unlockInput();
+      return;
+    }
+    state.analyzedCategory=analysis.category||null;
+    state.writingMode=analysis.category==="research_based"?"research":"best_effort";
     if(analysis.category==="research_based"){
       await generate();
     } else {
       warningGiven=true;
-      const pct=analysis.estimatedHumanPct;
-      const msg="Unfortunately, given the way dontgetcaught works, this type of prompt will likely generate a result that shows as "+(100-pct)+"% AI-generated. Our algorithm works best with research-based topics such as journalism, academic subjects, current events, science, history, culture, and more! Do you still wish to proceed?";
+      const pct=typeof analysis.estimatedHumanPct==="number"?analysis.estimatedHumanPct:45;
+      const msg="Unfortunately, given the way dontgetcaught works, this type of prompt will likely produce a result around "+pct+"% human (about "+(100-pct)+"% AI-detected). Our foreign-sourcing method works best on research-heavy topics. Do you still wish to proceed? We'll write directly and do our best.";
       const wWrap=document.createElement("div");wWrap.className="msg warning";
       const wBubble=document.createElement("div");wBubble.className="bubble";
       wBubble.innerHTML='<div style="color:#f0a500;font-size:.8rem;font-family:monospace;margin-bottom:.4rem">⚠ Heads up</div><div style="margin-bottom:.8rem">'+msg+'</div>';
@@ -461,6 +479,8 @@ async function analyzeAndProceed(){
     }
   }catch(e){
     removeTyping();
+    state.writingMode="research";
+    state.analyzedCategory=null;
     await generate();
   }
 }
@@ -553,9 +573,23 @@ async function generate(initialDraft=null){
       workingText=initialDraft;
       plog("Draft received. Starting refinement...","success");
     } else {
-      plog("Phase 1 — searching foreign language sources...","step");
-      const{draft}=await apiFetch("/generate",{prompt:fullPrompt,citations:state.citations,textType:state.textType});
-      workingText=draft;plog("Draft assembled.","success");
+      const phase1=state.writingMode==="best_effort"?"Phase 1 — writing your piece (direct mode, no foreign sourcing)...":"Phase 1 — searching foreign language sources...";
+      plog(phase1,"step");
+      const genRes=await fetch(SERVER+"/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        prompt:fullPrompt,citations:state.citations,textType:state.textType,
+        category:state.analyzedCategory||undefined,
+        writingMode:state.writingMode
+      })});
+      const genData=await genRes.json();
+      if(!genRes.ok){
+        if(genRes.status===400&&genData.error==="NON_TEXT"){
+          addAiMsg(genData.message||"This request isn't something we can do as text.");
+          throw new Error("NON_TEXT_HANDLED");
+        }
+        throw new Error(genData.message||genData.error||"Generate failed");
+      }
+      workingText=genData.draft;
+      plog("Draft assembled.","success");
     }
 
     for(let round=1;round<=3;round++){
@@ -569,7 +603,7 @@ async function generate(initialDraft=null){
       if(!flagged.length){plog("No sentences above threshold.","warn");break;}
       if(round===3){plog("Max rounds. Moving to polish.","warn");break;}
       plog("Humanizing connective tissue...","step");
-      const{humanized}=await apiFetch("/humanize",{draft:workingText,flaggedSentences:flagged.map(s=>s.text),textType:state.textType,citations:state.citations});
+      const{humanized}=await apiFetch("/humanize",{draft:workingText,flaggedSentences:flagged.map(s=>s.text),textType:state.textType,citations:state.citations,writingMode:state.writingMode});
       plog("Rewritten. Re-scanning...","info");workingText=humanized;
       versions.push({label:"Round "+round+" rewrite",score:null,text:humanized});
     }
@@ -577,7 +611,7 @@ async function generate(initialDraft=null){
     plog("Phase 3 — polishing...","step");
     // Save pre-polish version
     const prePolishText=workingText;
-    const{polished}=await apiFetch("/polish",{text:workingText,textType:state.textType,citations:state.citations});
+    const{polished}=await apiFetch("/polish",{text:workingText,textType:state.textType,citations:state.citations,writingMode:state.writingMode});
     workingText=polished;plog("Polish complete.","success");
 
     // Show pre-polish scan for comparison
@@ -593,6 +627,9 @@ async function generate(initialDraft=null){
     versions.push({label:"Final (after polish)",score:finalScore,text:workingText});
 
     const scoreClass=finalScore>=90?"score-green":finalScore>=80?"score-yellow":"score-red";
+    const luckyBanner=(warningGiven && finalScore>=TARGET)
+      ?'<div class="lucky-msg">You\'re lucky! We\'re still able to produce a fully human text!</div>'
+      :'';
     const resultWrap=document.createElement("div");resultWrap.className="msg ai";resultWrap.style.maxWidth="100%";resultWrap.style.width="100%";
     const resultBubble=document.createElement("div");resultBubble.className="bubble";resultBubble.style.maxWidth="100%";
     const formatted=workingText.split(/\n\n+/).map(p=>'<p style="margin-bottom:1rem">'+p.replace(/\n/g,'<br>')+'</p>').join('');
@@ -601,6 +638,7 @@ async function generate(initialDraft=null){
     let vPanelHtml='<div class="versions-panel"><div class="versions-label">ALL VERSIONS — click to compare</div><div class="version-tabs">'+vTabsHtml+'</div><div class="version-text" id="versionText">'+versions[versions.length-1].text+'</div></div>';
 
     resultBubble.innerHTML=
+      luckyBanner+
       '<div style="font-size:.72rem;font-family:monospace;color:#555;margin-bottom:.8rem">Here is your finished piece <span class="score-badge '+scoreClass+'">'+finalScore+'% human</span></div>'+
       '<div class="result-box">'+formatted+'</div>'+
       '<div class="result-actions">'+
@@ -619,8 +657,10 @@ async function generate(initialDraft=null){
     scrollBottom();
 
   }catch(e){
-    plog("Error: "+e.message,"error");
-    addAiMsg("Something went wrong: "+e.message+". Please try again.");
+    if(e.message!=="NON_TEXT_HANDLED"){
+      plog("Error: "+e.message,"error");
+      addAiMsg("Something went wrong: "+e.message+". Please try again.");
+    }
   }finally{
     if(factInterval)clearInterval(factInterval);
     const fc=document.getElementById("factCard");
@@ -655,7 +695,7 @@ function doCopyResult(btn){
 
 function doRewrite(){
   state.textType=null;state.tone=null;state.citations=null;state.wordCount=null;
-  state.prompt="";state.clarifications=[];warningGiven=false;history=[];
+  state.prompt="";state.clarifications=[];warningGiven=false;state.writingMode="research";state.analyzedCategory=null;history=[];
   unlockInput();
   addAiMsg("Sure — what would you like to write? Give me a new prompt or tweak the details.");
 }
